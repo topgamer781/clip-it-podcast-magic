@@ -1,7 +1,8 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Upload } from "lucide-react";
+import { ArrowRight, Upload, Eye } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Hero = () => {
   return (
@@ -16,12 +17,16 @@ const Hero = () => {
               Our AI automatically creates engaging, short-form content with captions, animations, and interactive elements.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <Button className="btn-gradient h-12 px-6 text-lg">
-                <Upload className="mr-2 h-5 w-5" /> Upload Podcast
-              </Button>
-              <Button variant="outline" className="h-12 px-6 text-lg">
-                See how it works <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
+              <Link to="/dashboard">
+                <Button className="btn-gradient h-12 px-6 text-lg">
+                  <Upload className="mr-2 h-5 w-5" /> Upload Podcast
+                </Button>
+              </Link>
+              <Link to="/demo">
+                <Button variant="outline" className="h-12 px-6 text-lg">
+                  <Eye className="mr-2 h-5 w-5" /> See how it works
+                </Button>
+              </Link>
             </div>
             <div className="pt-6 text-sm text-muted-foreground">
               <p>Already trusted by 100+ podcast creators</p>

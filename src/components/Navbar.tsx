@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogIn, UserPlus } from "lucide-react";
 
 const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -34,15 +34,24 @@ const Navbar = () => {
           <Link to="/docs" className="text-foreground/80 hover:text-foreground transition-colors">
             Docs
           </Link>
+          <Link to="/demo" className="text-foreground/80 hover:text-foreground transition-colors">
+            Demo
+          </Link>
         </nav>
         
         <div className="flex items-center gap-3">
-          <Button variant="ghost" className="hidden sm:flex">
-            Log in
-          </Button>
-          <Button className="bg-purple-gradient hover:bg-purple-600">
-            Sign up
-          </Button>
+          <Link to="/auth">
+            <Button variant="ghost" className="hidden sm:flex">
+              <LogIn className="mr-2 h-4 w-4" />
+              Log in
+            </Button>
+          </Link>
+          <Link to="/auth?tab=signup">
+            <Button className="bg-purple-gradient hover:bg-purple-600">
+              <UserPlus className="mr-2 h-4 w-4" />
+              Sign up
+            </Button>
+          </Link>
           
           {/* Mobile menu button */}
           <Button variant="ghost" size="icon" className="md:hidden" onClick={toggleMobileMenu}>
@@ -83,13 +92,26 @@ const Navbar = () => {
             >
               Docs
             </Link>
+            <Link 
+              to="/demo" 
+              className="px-4 py-2 text-foreground/80 hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Demo
+            </Link>
             <div className="pt-2 flex flex-col space-y-2">
-              <Button variant="outline" className="w-full justify-center">
-                Log in
-              </Button>
-              <Button className="w-full justify-center bg-purple-gradient hover:bg-purple-600">
-                Sign up
-              </Button>
+              <Link to="/auth" onClick={() => setMobileMenuOpen(false)}>
+                <Button variant="outline" className="w-full justify-center">
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Log in
+                </Button>
+              </Link>
+              <Link to="/auth?tab=signup" onClick={() => setMobileMenuOpen(false)}>
+                <Button className="w-full justify-center bg-purple-gradient hover:bg-purple-600">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Sign up
+                </Button>
+              </Link>
             </div>
           </nav>
         </div>
