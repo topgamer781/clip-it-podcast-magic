@@ -16,14 +16,15 @@ const CallToAction = () => {
             </p>
             <div className="pt-4 flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/auth?tab=signup">
-                <Button className="bg-white text-brand-purple hover:bg-white/90 h-12 px-8 text-lg">
-                  <Rocket className="mr-2 h-4 w-4" />
+                <Button className="bg-white text-brand-purple hover:bg-white/90 h-12 px-8 text-lg group">
+                  <Rocket className="mr-2 h-5 w-5 group-hover:animate-bounce-slow" />
                   Get Started Free
                 </Button>
               </Link>
               <Link to="/demo">
-                <Button variant="outline" className="text-white border-white hover:bg-white/10 h-12 px-8 text-lg">
-                  <Eye className="mr-2 h-4 w-4" /> See Demo
+                <Button variant="outline" className="text-white border-white hover:bg-white/10 h-12 px-8 text-lg group">
+                  <Eye className="mr-2 h-5 w-5 group-hover:animate-pulse-subtle" /> 
+                  See Demo
                 </Button>
               </Link>
             </div>

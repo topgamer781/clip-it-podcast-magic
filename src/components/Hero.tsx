@@ -1,7 +1,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Upload, Eye } from "lucide-react";
+import { Upload, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Hero = () => {
@@ -18,13 +18,15 @@ const Hero = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <Link to="/dashboard">
-                <Button className="btn-gradient h-12 px-6 text-lg">
-                  <Upload className="mr-2 h-5 w-5" /> Upload Podcast
+                <Button className="btn-gradient h-12 px-6 text-lg group transition-all">
+                  <Upload className="mr-2 h-5 w-5 group-hover:animate-bounce-slow" /> 
+                  Upload Podcast
                 </Button>
               </Link>
               <Link to="/demo">
-                <Button variant="outline" className="h-12 px-6 text-lg">
-                  <Eye className="mr-2 h-5 w-5" /> See how it works
+                <Button variant="outline" className="h-12 px-6 text-lg group">
+                  <Eye className="mr-2 h-5 w-5 group-hover:animate-pulse-subtle" /> 
+                  See how it works
                 </Button>
               </Link>
             </div>
