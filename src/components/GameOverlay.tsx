@@ -2,6 +2,7 @@
 import React from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 
 const GameOverlay = () => {
   return (
@@ -103,9 +104,11 @@ const GameOverlay = () => {
               </li>
             </ul>
             <div className="pt-4">
-              <Button className="group">
-                Explore Game Templates <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
-              </Button>
+              <Link to="/templates">
+                <Button className="group">
+                  Explore Game Templates <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </Link>
             </div>
           </div>
         </div>

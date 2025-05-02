@@ -21,12 +21,27 @@ import {
   Scissors,
   Sparkles,
   ArrowRight,
-  Link
+  Link,
+  Share2,
+  MoreHorizontal,
+  Calendar,
+  Clock,
+  ChevronRight,
+  PlayCircle,
+  Download
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useNavigate } from "react-router-dom";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 
 const Dashboard = () => {
   const [dragActive, setDragActive] = useState(false);
@@ -34,6 +49,7 @@ const Dashboard = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [generatedClips, setGeneratedClips] = useState<any[]>([]);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -91,6 +107,63 @@ const Dashboard = () => {
     // Simulate processing
     setTimeout(() => {
       setIsProcessing(false);
+      
+      // Generate mock clips
+      const mockClips = [
+        {
+          id: 1,
+          title: "Key insight on digital marketing trends",
+          duration: "1:45",
+          date: "Just now",
+          thumbnail: "https://via.placeholder.com/300x168/6D28D9/FFFFFF?text=Clip+1",
+          views: 0,
+          engagement: "0%",
+          template: "None"
+        },
+        {
+          id: 2,
+          title: "Funny moment about startup culture",
+          duration: "0:58",
+          date: "Just now",
+          thumbnail: "https://via.placeholder.com/300x168/4F46E5/FFFFFF?text=Clip+2",
+          views: 0,
+          engagement: "0%",
+          template: "None"
+        },
+        {
+          id: 3,
+          title: "Controversial opinion on industry standards",
+          duration: "2:12",
+          date: "Just now",
+          thumbnail: "https://via.placeholder.com/300x168/9333EA/FFFFFF?text=Clip+3",
+          views: 0,
+          engagement: "0%",
+          template: "None"
+        },
+        {
+          id: 4,
+          title: "Advice for new entrepreneurs",
+          duration: "1:24",
+          date: "Just now",
+          thumbnail: "https://via.placeholder.com/300x168/8B5CF6/FFFFFF?text=Clip+4",
+          views: 0,
+          engagement: "0%",
+          template: "None"
+        },
+        {
+          id: 5,
+          title: "Predictions for next year's tech innovations",
+          duration: "1:37",
+          date: "Just now",
+          thumbnail: "https://via.placeholder.com/300x168/7C3AED/FFFFFF?text=Clip+5",
+          views: 0,
+          engagement: "0%",
+          template: "None"
+        }
+      ];
+      
+      setGeneratedClips(mockClips);
+      
       toast({
         title: "Processing complete!",
         description: "Your clips are ready for review.",
@@ -102,29 +175,21 @@ const Dashboard = () => {
         description: "5 clips have been generated from your podcast.",
       });
       
-      // Navigate to clips page (in a real app)
-      // For now, we'll just show the templates section
+      // Show templates section for enhancing clips
       setShowTemplates(true);
+      
+      // Auto-scroll to clips section
+      setTimeout(() => {
+        const clipsSection = document.getElementById('clips-section');
+        if (clipsSection) {
+          clipsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
     }, 3000);
   };
 
   const exploreMoreTemplates = () => {
-    // This would navigate to a templates gallery page in a real app
-    toast({
-      title: "Templates Gallery",
-      description: "Exploring all available game templates.",
-    });
-    
-    // For demo purposes, we'll show more templates directly
-    setShowTemplates(true);
-    
-    // Scroll to templates section
-    setTimeout(() => {
-      const templatesSection = document.getElementById('templates-section');
-      if (templatesSection) {
-        templatesSection.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, 100);
+    navigate('/templates');
   };
 
   const templateTypes = [
@@ -167,6 +232,21 @@ const Dashboard = () => {
       popular: true
     }
   ];
+
+  const applyTemplateToClip = (clipId: number, templateName: string) => {
+    setGeneratedClips(clips => 
+      clips.map(clip => 
+        clip.id === clipId 
+          ? {...clip, template: templateName} 
+          : clip
+      )
+    );
+    
+    toast({
+      title: "Template Applied",
+      description: `${templateName} template added to clip #${clipId}.`,
+    });
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -320,6 +400,153 @@ const Dashboard = () => {
           </Card>
         </div>
         
+        {/* Generated Clips Section */}
+        {generatedClips.length > 0 && (
+          <div className="mt-12" id="clips-section">
+            <Card className="border-brand-purple/20 shadow-md overflow-visible">
+              <CardHeader className="bg-gradient-to-r from-brand-purple/10 to-transparent">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Video className="h-5 w-5 text-brand-purple" />
+                      Generated Clips
+                    </CardTitle>
+                    <CardDescription>
+                      AI-generated clips from your podcast
+                    </CardDescription>
+                  </div>
+                  <Tabs defaultValue="all" className="w-full sm:w-auto">
+                    <TabsList className="grid grid-cols-3 w-full sm:w-auto">
+                      <TabsTrigger value="all">All</TabsTrigger>
+                      <TabsTrigger value="published">Published</TabsTrigger>
+                      <TabsTrigger value="drafts">Drafts</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 my-4">
+                    {generatedClips.map((clip) => (
+                      <div key={clip.id} className="group relative">
+                        <div className="aspect-video rounded-lg overflow-hidden relative">
+                          <img 
+                            src={clip.thumbnail} 
+                            alt={clip.title} 
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-80"></div>
+                          <div className="absolute bottom-3 left-3 right-3">
+                            <h3 className="text-white text-sm font-medium line-clamp-2">{clip.title}</h3>
+                            <div className="flex items-center text-white/70 text-xs mt-1">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {clip.duration}
+                              <span className="mx-2">•</span>
+                              <Calendar className="h-3 w-3 mr-1" />
+                              {clip.date}
+                            </div>
+                          </div>
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            {clip.template !== "None" && (
+                              <span className="bg-brand-purple text-white text-xs px-2 py-0.5 rounded-full">
+                                {clip.template}
+                              </span>
+                            )}
+                          </div>
+                          <button className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="bg-brand-purple/90 rounded-full p-2.5">
+                              <Play className="h-8 w-8 text-white" />
+                            </div>
+                          </button>
+                        </div>
+                        
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="h-8 text-xs gap-1 hover:bg-brand-purple hover:text-white hover:border-brand-purple"
+                            >
+                              <PlayCircle className="h-3.5 w-3.5" />
+                              Preview
+                            </Button>
+                            
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="h-8 text-xs gap-1 hover:bg-brand-purple hover:text-white hover:border-brand-purple"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </div>
+                          
+                          <div className="flex items-center gap-1">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="icon" variant="outline" className="h-8 w-8">
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => navigate('/templates')}>
+                                  <Rocket className="mr-2 h-4 w-4" />
+                                  Add Game Template
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>
+                                  <Share2 className="mr-2 h-4 w-4" />
+                                  Share Clip
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                        
+                        {/* Quick template selection */}
+                        <div className="mt-3 p-2 bg-slate-50 rounded-md border border-slate-200">
+                          <p className="text-xs text-muted-foreground mb-2">Add template:</p>
+                          <div className="flex gap-1.5 overflow-x-auto pb-1">
+                            {templateTypes.slice(0, 3).map((template, idx) => (
+                              <Button 
+                                key={idx}
+                                size="sm" 
+                                variant="outline" 
+                                className="h-7 text-xs whitespace-nowrap hover:bg-brand-purple hover:text-white hover:border-brand-purple"
+                                onClick={() => applyTemplateToClip(clip.id, template.name)}
+                              >
+                                <span className="mr-1">{template.icon.split(' ')[0]}</span>
+                                {template.name}
+                              </Button>
+                            ))}
+                            <Button 
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => navigate('/templates')}
+                            >
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="flex justify-center mt-4">
+                  <Button 
+                    onClick={() => navigate('/templates')} 
+                    className="bg-brand-purple hover:bg-brand-purple/90"
+                  >
+                    Enhance Clips with Templates
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        
         <div className="mt-12" id="templates-section">
           <Card className="border-brand-purple/20 shadow-md">
             <CardHeader className="bg-gradient-to-r from-brand-purple/10 to-transparent rounded-t-lg">
@@ -351,7 +578,12 @@ const Dashboard = () => {
                     <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300">{template.icon}</div>
                     <h3 className="font-medium mb-1 text-brand-purple">{template.name}</h3>
                     <p className="text-xs text-muted-foreground mb-3">{template.description}</p>
-                    <Button size="sm" variant="outline" className="w-full text-xs group-hover:bg-brand-purple group-hover:text-white">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="w-full text-xs group-hover:bg-brand-purple group-hover:text-white"
+                      onClick={() => navigate('/templates')}
+                    >
                       Preview
                     </Button>
                   </div>

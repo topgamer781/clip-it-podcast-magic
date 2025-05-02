@@ -10,23 +10,31 @@ import {
   CardTitle 
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Rocket, Sparkles, Play, Star, Heart, MessageSquare, ThumbsUp } from "lucide-react";
+import { 
+  Rocket, 
+  Sparkles, 
+  Play, 
+  Star, 
+  Heart, 
+  MessageSquare, 
+  ThumbsUp,
+  X
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 
 const GameTemplates = () => {
   const [activeTab, setActiveTab] = useState("popular");
   const { toast } = useToast();
+  const [previewTemplate, setPreviewTemplate] = useState(null);
   
-  const handlePreview = (templateName: string) => {
-    toast({
-      title: "Template Preview",
-      description: `Previewing the ${templateName} template.`
-    });
+  const handlePreview = (template) => {
+    setPreviewTemplate(template);
   };
   
-  const handleUseTemplate = (templateName: string) => {
+  const handleUseTemplate = (templateName) => {
     toast({
       title: "Template Selected",
       description: `${templateName} template has been applied to your clip.`
@@ -75,7 +83,8 @@ const GameTemplates = () => {
         name: "Quiz Show",
         description: "Create interactive quizzes based on your content",
         icon: "❓ 🎯 🏆",
-        category: "Interactive"
+        category: "Interactive",
+        popular: false
       },
       {
         id: "poll",
@@ -83,6 +92,7 @@ const GameTemplates = () => {
         description: "Let viewers vote on questions or options",
         icon: "🗳️ 📊 👍",
         category: "Interactive",
+        popular: true,
         new: true
       },
       {
@@ -91,6 +101,7 @@ const GameTemplates = () => {
         description: "Music-synced tapping game",
         icon: "🎵 👆 🎶",
         category: "Interactive",
+        popular: false,
         new: true
       },
       {
@@ -98,14 +109,16 @@ const GameTemplates = () => {
         name: "Swipe Choice",
         description: "Swipe left/right to make choices",
         icon: "👈 🔀 👉",
-        category: "Interactive"
+        category: "Interactive",
+        popular: false
       },
       {
         id: "question-answer",
         name: "Q&A",
         description: "Interactive question and answer format",
         icon: "❓ 💭 ✅",
-        category: "Interactive"
+        category: "Interactive",
+        popular: true
       }
     ],
     visual: [
@@ -114,21 +127,24 @@ const GameTemplates = () => {
         name: "Emoji Reaction",
         description: "Add emoji reactions that viewers can tap",
         icon: "🎮 😂 ❤️ 🔥",
-        category: "Visual"
+        category: "Visual",
+        popular: true
       },
       {
         id: "word-cloud",
         name: "Word Cloud",
         description: "Generate clickable keyword clouds",
         icon: "☁️ 📝 🔤",
-        category: "Visual"
+        category: "Visual",
+        popular: false
       },
       {
         id: "quotes",
         name: "Quotes",
         description: "Highlight quotable moments with animations",
         icon: "💬 ✨ 📜",
-        category: "Visual"
+        category: "Visual",
+        popular: true
       },
       {
         id: "animated-captions",
@@ -136,6 +152,7 @@ const GameTemplates = () => {
         description: "Text animations that follow speech patterns",
         icon: "🔤 ✨ 🎬",
         category: "Visual",
+        popular: false,
         new: true
       },
       {
@@ -143,7 +160,8 @@ const GameTemplates = () => {
         name: "Visual Effects",
         description: "Add visual effects based on audio cues",
         icon: "🌟 🎨 💫",
-        category: "Visual"
+        category: "Visual",
+        popular: false
       }
     ],
     engagement: [
@@ -152,21 +170,24 @@ const GameTemplates = () => {
         name: "Emoji Reaction",
         description: "Add emoji reactions that viewers can tap",
         icon: "🎮 😂 ❤️ 🔥",
-        category: "Engagement"
+        category: "Engagement",
+        popular: true
       },
       {
         id: "comments",
         name: "Comments",
         description: "Simulated comment section with reactions",
         icon: "💬 👥 📝",
-        category: "Engagement"
+        category: "Engagement",
+        popular: false
       },
       {
         id: "follow-button",
         name: "Follow Button",
         description: "Animated follow button with counter",
         icon: "➕ 👤 🔔",
-        category: "Engagement"
+        category: "Engagement",
+        popular: false
       },
       {
         id: "share-prompt",
@@ -174,6 +195,7 @@ const GameTemplates = () => {
         description: "Animated prompts to share content",
         icon: "📤 🔄 📲",
         category: "Engagement",
+        popular: false,
         new: true
       }
     ]
@@ -248,7 +270,7 @@ const GameTemplates = () => {
                 <div className="absolute inset-0 bg-brand-purple/80 flex items-center justify-center flex-col gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                   <Button 
                     className="bg-white text-brand-purple hover:bg-white/90"
-                    onClick={() => handlePreview(template.name)}
+                    onClick={() => handlePreview(template)}
                   >
                     <Play className="mr-2 h-4 w-4" />
                     Preview Template
@@ -306,6 +328,122 @@ const GameTemplates = () => {
           </div>
         </div>
       </div>
+      
+      {/* Template Preview Dialog */}
+      <Dialog open={previewTemplate !== null} onOpenChange={(open) => !open && setPreviewTemplate(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-brand-purple">
+                {previewTemplate?.name} 
+              </span>
+              <span className="text-xl ml-2">
+                {previewTemplate?.icon?.split(' ')[0]}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              {previewTemplate?.description}
+            </DialogDescription>
+            <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center">
+            <div className="aspect-[9/16] w-full max-w-[250px] bg-black/90 rounded-xl overflow-hidden my-4">
+              {previewTemplate?.id === "emoji-reaction" && (
+                <div className="h-full w-full p-4 flex flex-col justify-end">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-xl p-3 animate-fade-in">
+                    <p className="text-white text-sm text-center mb-2">TAP YOUR REACTION</p>
+                    <div className="flex justify-around">
+                      {["😂", "❤️", "🔥", "👍", "🎉"].map((emoji, i) => (
+                        <div key={i} className="text-2xl cursor-pointer hover:scale-125 transition-transform">
+                          {emoji}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {previewTemplate?.id === "poll" && (
+                <div className="h-full w-full p-4 flex flex-col justify-end">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-xl p-3 animate-fade-in">
+                    <p className="text-white text-sm text-center mb-2">WHICH OPTION DO YOU PREFER?</p>
+                    <div className="space-y-2">
+                      <div className="bg-white/10 hover:bg-white/20 rounded-md p-2 cursor-pointer transition-all">
+                        <div className="text-white flex justify-between">
+                          <span>Option A</span>
+                          <span>67%</span>
+                        </div>
+                        <div className="h-1.5 bg-white/20 rounded-full mt-1 overflow-hidden">
+                          <div className="h-full bg-brand-purple rounded-full" style={{width: '67%'}}></div>
+                        </div>
+                      </div>
+                      <div className="bg-white/10 hover:bg-white/20 rounded-md p-2 cursor-pointer transition-all">
+                        <div className="text-white flex justify-between">
+                          <span>Option B</span>
+                          <span>33%</span>
+                        </div>
+                        <div className="h-1.5 bg-white/20 rounded-full mt-1 overflow-hidden">
+                          <div className="h-full bg-brand-purple rounded-full" style={{width: '33%'}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {previewTemplate?.id === "quiz-show" && (
+                <div className="h-full w-full p-4 flex flex-col justify-end">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-xl p-3 animate-fade-in">
+                    <p className="text-white text-sm text-center mb-2">QUIZ TIME!</p>
+                    <p className="text-white text-xs mb-3 text-center">What's the correct answer?</p>
+                    <div className="space-y-1.5">
+                      <div className="bg-white/10 hover:bg-white/30 rounded-md p-1.5 cursor-pointer transition-all text-white text-xs">Answer A</div>
+                      <div className="bg-white/10 hover:bg-white/30 rounded-md p-1.5 cursor-pointer transition-all text-white text-xs">Answer B</div>
+                      <div className="bg-brand-purple/60 hover:bg-brand-purple rounded-md p-1.5 cursor-pointer transition-all text-white text-xs flex items-center justify-between">
+                        <span>Answer C</span>
+                        <span className="text-xs">✓</span>
+                      </div>
+                      <div className="bg-white/10 hover:bg-white/30 rounded-md p-1.5 cursor-pointer transition-all text-white text-xs">Answer D</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Default preview for other templates */}
+              {(!previewTemplate?.id || 
+                (previewTemplate?.id !== "emoji-reaction" && 
+                 previewTemplate?.id !== "poll" && 
+                 previewTemplate?.id !== "quiz-show")) && (
+                <div className="h-full w-full p-4 flex flex-col justify-center items-center">
+                  <div className="animate-pulse-subtle text-6xl mb-4">
+                    {previewTemplate?.icon?.split(' ').slice(0, 2).join(' ')}
+                  </div>
+                  <div className="bg-black/40 backdrop-blur-sm rounded-xl p-3 text-center">
+                    <p className="text-white text-sm">{previewTemplate?.name}</p>
+                    <p className="text-white/70 text-xs mt-1">{previewTemplate?.category}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <Button 
+              className="mt-4 bg-brand-purple hover:bg-brand-purple/90"
+              onClick={() => {
+                handleUseTemplate(previewTemplate?.name);
+                setPreviewTemplate(null);
+              }}
+            >
+              <Rocket className="mr-2 h-4 w-4" />
+              Use This Template
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
       <Footer />
     </div>
   );
