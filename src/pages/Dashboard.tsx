@@ -28,7 +28,8 @@ import {
   Clock,
   ChevronRight,
   PlayCircle,
-  Download
+  Download,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
@@ -42,6 +43,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import axios from "axios"; // Add axios for API calls
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+// Add API base URL
+const API_BASE_URL = "https://1r9yg9qxg1ip8c-64410d4b-8000.proxy.runpod.net"; // Adjust based on your backend URL
 
 const Dashboard = () => {
   const [dragActive, setDragActive] = useState(false);
@@ -53,6 +65,13 @@ const Dashboard = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  // Add state for backend connection
+  const [isConnectedToBackend, setIsConnectedToBackend] = useState(true);
+  // Add a state for the preview modal
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewClip, setPreviewClip] = useState<any>(null);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -81,18 +100,51 @@ const Dashboard = () => {
     }
   };
 
-  const handleUpload = (file: File) => {
+  // Add function to handle file upload to backend
+  const handleUpload = async (file: File) => {
     setUploadedFile(file);
     setIsUploading(true);
     
-    // Simulate file upload
-    setTimeout(() => {
+    try {
+      // Create form data
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // Create an axios instance with CORS configuration
+      const api = axios.create({
+        baseURL: API_BASE_URL,
+        headers: {
+          // 'Content-Type': 'application/json',
+          "Content-Type": "multipart/form-data",
+          'Access-Control-Allow-Origin': '*'
+        },
+        withCredentials: false
+      });
+      
+      // Upload file to backend
+      const response = await api.post(`/upload`, formData);
+      
+      // Handle successful upload
+      if (response.data && response.data.video_id) {
+        setIsUploading(false);
+        toast({
+          title: "Upload successful!",
+          description: `${file.name} has been uploaded.`,
+        });
+        
+        // Store video ID for processing
+        setUploadedFile(Object.assign(file, { video_id: response.data.video_id }));
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
       setIsUploading(false);
       toast({
-        title: "Upload successful!",
-        description: `${file.name} has been uploaded.`,
+        title: "Upload failed",
+        description: "There was an error uploading your file. Please try again.",
+        variant: "destructive",
       });
-    }, 2000);
+      setIsConnectedToBackend(false);
+    }
   };
 
   const triggerFileInput = () => {
@@ -101,91 +153,105 @@ const Dashboard = () => {
     }
   };
 
-  const startProcessing = () => {
+  // Add function to check task status
+  const checkTaskStatus = async (taskId: string) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/status/${taskId}`);
+      
+      if (response.data) {
+        // Update progress
+        setProcessingProgress(response.data.progress || 0);
+        
+        // Check if processing is complete
+        if (response.data.status === "completed" && response.data.clips) {
+          setIsProcessing(false);
+          setGeneratedClips(response.data.clips.map((clip: any, index: number) => ({
+            id: index + 1,
+            title: clip.title || `Clip ${index + 1}`,
+            duration: formatDuration(clip.end_time - clip.start_time),
+            date: "Just now",
+            thumbnail: clip.thumbnail_url || `https://via.placeholder.com/300x168/${getRandomColor()}/FFFFFF?text=Clip+${index+1}`,
+            views: 0,
+            engagement: "0%",
+            template: "None",
+            url: clip.url
+          })));
+          
+          toast({
+            title: "Processing complete!",
+            description: `${response.data.clips.length} clips have been generated from your podcast.`,
+          });
+          
+          return true;
+        } else if (response.data.status === "error") {
+          setIsProcessing(false);
+          toast({
+            title: "Processing failed",
+            description: response.data.message || "There was an error processing your file.",
+            variant: "destructive",
+          });
+          return true;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error("Status check error:", error);
+      return false;
+    }
+  };
+
+  // Add function to format duration
+  const formatDuration = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  // Add function to generate random color for thumbnails
+  const getRandomColor = (): string => {
+    const colors = ['6D28D9', '4F46E5', '9333EA', '8B5CF6', '7C3AED'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  // Modify startProcessing function to connect to backend
+  const startProcessing = async () => {
+    if (!uploadedFile || !(uploadedFile as any).video_id) {
+      toast({
+        title: "No file selected",
+        description: "Please upload a file first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsProcessing(true);
+    setProcessingProgress(0);
     
-    // Simulate processing
-    setTimeout(() => {
+    try {
+      // Start processing on backend
+      const response = await axios.post(`${API_BASE_URL}/process-video/${(uploadedFile as any).video_id}`);
+      
+      if (response.data && response.data.task_id) {
+        setTaskId(response.data.task_id);
+        
+        // Poll for status updates
+        const statusInterval = setInterval(async () => {
+          const isComplete = await checkTaskStatus(response.data.task_id);
+          if (isComplete) {
+            clearInterval(statusInterval);
+          }
+        }, 2000);
+      }
+    } catch (error) {
+      console.error("Processing error:", error);
       setIsProcessing(false);
-      
-      // Generate mock clips
-      const mockClips = [
-        {
-          id: 1,
-          title: "Key insight on digital marketing trends",
-          duration: "1:45",
-          date: "Just now",
-          thumbnail: "https://via.placeholder.com/300x168/6D28D9/FFFFFF?text=Clip+1",
-          views: 0,
-          engagement: "0%",
-          template: "None"
-        },
-        {
-          id: 2,
-          title: "Funny moment about startup culture",
-          duration: "0:58",
-          date: "Just now",
-          thumbnail: "https://via.placeholder.com/300x168/4F46E5/FFFFFF?text=Clip+2",
-          views: 0,
-          engagement: "0%",
-          template: "None"
-        },
-        {
-          id: 3,
-          title: "Controversial opinion on industry standards",
-          duration: "2:12",
-          date: "Just now",
-          thumbnail: "https://via.placeholder.com/300x168/9333EA/FFFFFF?text=Clip+3",
-          views: 0,
-          engagement: "0%",
-          template: "None"
-        },
-        {
-          id: 4,
-          title: "Advice for new entrepreneurs",
-          duration: "1:24",
-          date: "Just now",
-          thumbnail: "https://via.placeholder.com/300x168/8B5CF6/FFFFFF?text=Clip+4",
-          views: 0,
-          engagement: "0%",
-          template: "None"
-        },
-        {
-          id: 5,
-          title: "Predictions for next year's tech innovations",
-          duration: "1:37",
-          date: "Just now",
-          thumbnail: "https://via.placeholder.com/300x168/7C3AED/FFFFFF?text=Clip+5",
-          views: 0,
-          engagement: "0%",
-          template: "None"
-        }
-      ];
-      
-      setGeneratedClips(mockClips);
-      
       toast({
-        title: "Processing complete!",
-        description: "Your clips are ready for review.",
+        title: "Processing failed",
+        description: "There was an error processing your file. Please try again.",
+        variant: "destructive",
       });
-      
-      // Show clip creation success
-      toast({
-        title: "New clips created!",
-        description: "5 clips have been generated from your podcast.",
-      });
-      
-      // Show templates section for enhancing clips
-      setShowTemplates(true);
-      
-      // Auto-scroll to clips section
-      setTimeout(() => {
-        const clipsSection = document.getElementById('clips-section');
-        if (clipsSection) {
-          clipsSection.scrollIntoView({ behavior: 'smooth' });
-        }
-      }, 100);
-    }, 3000);
+      setIsConnectedToBackend(false);
+    }
   };
 
   const exploreMoreTemplates = () => {
@@ -248,8 +314,86 @@ const Dashboard = () => {
     });
   };
 
+  // Add function to download clip
+  const downloadClip = async (url: string) => {
+    try {
+      // Create a full URL if it's a relative path
+      const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+      
+      // Show loading toast
+      toast({
+        title: "Starting download",
+        description: "Preparing your clip for download...",
+      });
+      
+      // Fetch the file
+      const response = await fetch(fullUrl);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Get the blob
+      const blob = await response.blob();
+      
+      // Create a URL for the blob
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      
+      // Extract filename from URL or use a default name
+      const filename = url.split('/').pop() || 'clip.mp4';
+      link.download = filename;
+      
+      // Append to the document
+      document.body.appendChild(link);
+      
+      // Trigger click
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      
+      toast({
+        title: "Download complete",
+        description: "Your clip has been downloaded.",
+      });
+    } catch (error) {
+      console.error("Download error:", error);
+      toast({
+        title: "Download failed",
+        description: "There was an error downloading your clip.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Add a function to handle preview
+  const handlePreview = (clip: any) => {
+    setPreviewClip(clip);
+    setPreviewOpen(true);
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
+      {!isConnectedToBackend && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded fixed top-20 right-4 z-50 shadow-md">
+          <div className="flex">
+            <div className="py-1">
+              <svg className="fill-current h-6 w-6 text-red-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zm12.73-1.41A8 8 0 1 0 4.34 4.34a8 8 0 0 0 11.32 11.32zM9 11V9h2v6H9v-4zm0-6h2v2H9V5z"/>
+              </svg>
+            </div>
+            <div>
+              <p className="font-bold">Backend Connection Error</p>
+              <p className="text-sm">Unable to connect to the backend service. Please check if the server is running.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <Navbar />
       <div className="flex-grow container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-2 text-brand-purple">Creator Dashboard</h1>
@@ -387,7 +531,7 @@ const Dashboard = () => {
                 {isProcessing ? (
                   <div className="flex items-center">
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                    Processing...
+                    Processing... {processingProgress > 0 ? `${Math.round(processingProgress)}%` : ''}
                   </div>
                 ) : (
                   <div className="flex items-center">
@@ -431,7 +575,7 @@ const Dashboard = () => {
                       <div key={clip.id} className="group relative">
                         <div className="aspect-video rounded-lg overflow-hidden relative">
                           <img 
-                            src={clip.thumbnail} 
+                            src={clip.thumbnail.startsWith('http') ? clip.thumbnail : `${API_BASE_URL}${clip.thumbnail}`} 
                             alt={clip.title} 
                             className="w-full h-full object-cover"
                           />
@@ -466,6 +610,7 @@ const Dashboard = () => {
                               size="sm" 
                               variant="outline" 
                               className="h-8 text-xs gap-1 hover:bg-brand-purple hover:text-white hover:border-brand-purple"
+                              onClick={() => handlePreview(clip)}
                             >
                               <PlayCircle className="h-3.5 w-3.5" />
                               Preview
@@ -475,6 +620,7 @@ const Dashboard = () => {
                               size="sm" 
                               variant="outline" 
                               className="h-8 text-xs gap-1 hover:bg-brand-purple hover:text-white hover:border-brand-purple"
+                              onClick={() => downloadClip(clip.url)}
                             >
                               <Download className="h-3.5 w-3.5" />
                               Download
@@ -657,6 +803,67 @@ const Dashboard = () => {
         )}
       </div>
       <Footer />
+      {/* Preview Modal */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle>{previewClip?.title || "Clip Preview"}</DialogTitle>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setPreviewOpen(false)}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <DialogDescription>
+              {previewClip?.duration ? `Duration: ${previewClip.duration}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center">
+            <div className="aspect-[9/16] h-auto max-h-[60vh] overflow-hidden rounded-md bg-black">
+              {previewClip && (
+                <video 
+                  src={previewClip.url.startsWith('http') ? previewClip.url : `${API_BASE_URL}${previewClip.url}`}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-cover"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-between mt-4">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                // Copy share link to clipboard
+                const shareUrl = `${window.location.origin}/share/${previewClip?.id}`;
+                navigator.clipboard.writeText(shareUrl);
+                toast({
+                  title: "Link copied",
+                  description: "Share link copied to clipboard",
+                });
+              }}
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
+            </Button>
+            <Button 
+              variant="default"
+              size="sm"
+              onClick={() => downloadClip(previewClip.url)}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
