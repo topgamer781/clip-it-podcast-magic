@@ -1,5 +1,4 @@
-
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Card, 
@@ -29,7 +28,8 @@ import {
   ChevronRight,
   PlayCircle,
   Download,
-  X
+  X,
+  Youtube
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
@@ -51,19 +51,27 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import S3FileUploader from '../components/S3FileUploader';
+import YouTubeDownloader from '../components/YouTubeDownloader';
+import { InfoIcon } from "lucide-react";
 
 // Add API base URL
-const API_BASE_URL = "https://1r9yg9qxg1ip8c-64410d4b-8000.proxy.runpod.net"; // Adjust based on your backend URL
+const API_BASE_URL = "https://e2wrar6rqxe20e-8000.proxy.runpod.net"; // Adjust based on your backend URL
+
+interface UploadItem {
+  id: string;
+  filename: string;
+  uploadDate: string;
+  status: string;
+  s3Key?: string;
+  taskId?: string;
+}
 
 const Dashboard = () => {
-  const [dragActive, setDragActive] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [generatedClips, setGeneratedClips] = useState<any[]>([]);
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const [taskId, setTaskId] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -72,131 +80,174 @@ const Dashboard = () => {
   // Add a state for the preview modal
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewClip, setPreviewClip] = useState<any>(null);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [processingVideo, setProcessingVideo] = useState<string | null>(null);
+  const [activePollingInterval, setActivePollingInterval] = useState<NodeJS.Timeout | null>(null);
+  // Add a new state for tracking connection attempts and connection status
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [statusPollingErrors, setStatusPollingErrors] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
+  const [processingMessage, setProcessingMessage] = useState<string | null>(null);
+  const MAX_CONSECUTIVE_ERRORS = 5; // Max number of consecutive errors before showing connection error
+  // Add a state to track completion status to prevent duplicate alerts
+  const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
+  // Add a state for the full-screen loading overlay
+  const [showFullScreenLoading, setShowFullScreenLoading] = useState(false);
+  const [uploadMethod, setUploadMethod] = useState<'s3' | 'youtube'>('s3');
+  // Add a new state variable to track background processing
+  const [backgroundProcessing, setBackgroundProcessing] = useState(false);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
+  // useEffect for cleanup when component unmounts
+  useEffect(() => {
+    // Cleanup function to clear any active intervals when component unmounts
+    return () => {
+      if (activePollingInterval) {
+        clearInterval(activePollingInterval);
+      }
+    };
+  }, [activePollingInterval]);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleUpload(e.dataTransfer.files[0]);
-    }
-  };
+  // Update the useEffect for processing status to handle background processing
+  useEffect(() => {
+    // This effect handles success/error notifications to prevent duplicates
+    if (!processingStatus || !taskId) return;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      handleUpload(e.target.files[0]);
-    }
-  };
+    console.log("Processing status changed:", processingStatus, "for task ID:", taskId);
+    console.log("Completed task IDs:", Array.from(completedTaskIds));
 
-  // Add function to handle file upload to backend
-  const handleUpload = async (file: File) => {
-    setUploadedFile(file);
-    setIsUploading(true);
-    
-    try {
-      // Create form data
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // Create an axios instance with CORS configuration
-      const api = axios.create({
-        baseURL: API_BASE_URL,
-        headers: {
-          // 'Content-Type': 'application/json',
-          "Content-Type": "multipart/form-data",
-          'Access-Control-Allow-Origin': '*'
-        },
-        withCredentials: false
+    // Only show completion alert once per task
+    if (processingStatus === "completed" && !completedTaskIds.has(taskId)) {
+      console.log("Showing completion toast for task:", taskId);
+      
+      // Mark this task as completed
+      setCompletedTaskIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(taskId);
+        return newSet;
       });
       
-      // Upload file to backend
-      const response = await api.post(`/upload`, formData);
+      // Hide the full-screen loading overlay and reset background processing
+      setShowFullScreenLoading(false);
+      setBackgroundProcessing(false);
       
-      // Handle successful upload
-      if (response.data && response.data.video_id) {
-        setIsUploading(false);
-        toast({
-          title: "Upload successful!",
-          description: `${file.name} has been uploaded.`,
-        });
-        
-        // Store video ID for processing
-        setUploadedFile(Object.assign(file, { video_id: response.data.video_id }));
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      setIsUploading(false);
+      // Show success toast only once
       toast({
-        title: "Upload failed",
-        description: "There was an error uploading your file. Please try again.",
+        title: "Processing complete!",
+        description: `${generatedClips.length} clips have been generated from your podcast.`,
+      });
+    }
+    
+    // Only show error alert once per task
+    if (processingStatus === "error" && !completedTaskIds.has(taskId)) {
+      console.log("Showing error toast for task:", taskId);
+      
+      // Mark this task as completed (with error)
+      setCompletedTaskIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(taskId);
+        return newSet;
+      });
+      
+      // Hide the full-screen loading overlay and reset background processing
+      setShowFullScreenLoading(false);
+      setBackgroundProcessing(false);
+      
+      // Show error toast only once
+      toast({
+        title: "Processing failed",
+        description: processingMessage || "There was an error processing your file.",
         variant: "destructive",
       });
-      setIsConnectedToBackend(false);
     }
-  };
-
-  const triggerFileInput = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
+  }, [processingStatus, taskId, generatedClips.length, processingMessage, completedTaskIds, toast]);
 
   // Add function to check task status
   const checkTaskStatus = async (taskId: string) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/status/${taskId}`);
+      console.log(`Checking status for task: ${taskId}`);
+      
+      const response = await axios.get(`${API_BASE_URL}/status/${taskId}`, {
+        timeout: 600 * 1000 // Set a reasonable timeout
+      });
+      
+      // Reset error count on successful response
+      setStatusPollingErrors(0);
+      setIsConnectedToBackend(true);
       
       if (response.data) {
-        // Update progress
-        setProcessingProgress(response.data.progress || 0);
+        console.log(`Received status response for task ${taskId}:`, response.data);
         
-        // Check if processing is complete
-        if (response.data.status === "completed" && response.data.clips) {
+        // Update processing details
+        setProcessingProgress(response.data.progress || 0);
+        setProcessingStatus(response.data.status);
+        setProcessingMessage(response.data.message || null);
+        
+        // Update taskId to ensure useEffect can detect changes
+        setTaskId(taskId);
+        
+        // Check if this task has a process_task_id and we should switch to polling that instead
+        if (response.data.process_task_id && 
+            ["downloaded", "processing_started", "queued"].includes(response.data.status)) {
+          console.log(`Task ${taskId} has process_task_id ${response.data.process_task_id}, will switch to polling that task`);
+          // Return false to continue polling, but the calling function should switch to the process_task_id
+          return {
+            isComplete: false,
+            shouldSwitchTask: true,
+            newTaskId: response.data.process_task_id
+          };
+        }
+        
+        // Check if processing is complete or in error state
+        if (response.data.status === "completed") {
+          console.log(`Task ${taskId} is complete`);
           setIsProcessing(false);
-          setGeneratedClips(response.data.clips.map((clip: any, index: number) => ({
-            id: index + 1,
-            title: clip.title || `Clip ${index + 1}`,
-            duration: formatDuration(clip.end_time - clip.start_time),
-            date: "Just now",
-            thumbnail: clip.thumbnail_url || `https://via.placeholder.com/300x168/${getRandomColor()}/FFFFFF?text=Clip+${index+1}`,
-            views: 0,
-            engagement: "0%",
-            template: "None",
-            url: clip.url
-          })));
+          setBackgroundProcessing(false);
+          if (response.data.clips) {
+            console.log(`Task ${taskId} has ${response.data.clips.length} clips`);
+            setGeneratedClips(response.data.clips.map((clip: any, index: number) => ({
+              id: index + 1,
+              title: clip.title || `Clip ${index + 1}`,
+              duration: formatDuration(clip.end_time - clip.start_time),
+              date: "Just now",
+              thumbnail: clip.thumbnail_url || `https://via.placeholder.com/300x168/${getRandomColor()}/FFFFFF?text=Clip+${index+1}`,
+              views: 0,
+              engagement: "0%",
+              template: "None",
+              url: clip.url
+            })));
+          }
           
-          toast({
-            title: "Processing complete!",
-            description: `${response.data.clips.length} clips have been generated from your podcast.`,
-          });
-          
-          return true;
+          return { isComplete: true };
         } else if (response.data.status === "error") {
+          console.log(`Task ${taskId} has error: ${response.data.message}`);
           setIsProcessing(false);
-          toast({
-            title: "Processing failed",
-            description: response.data.message || "There was an error processing your file.",
-            variant: "destructive",
-          });
-          return true;
+          setBackgroundProcessing(false);
+          return { isComplete: true };
+        } else if (response.data.status === "downloading") {
+          // Special handling for downloading status
+          console.log(`Task ${taskId} is still downloading: ${response.data.progress}%`);
+          setProcessingMessage(response.data.message || "Downloading file from S3...");
+          // Keep polling - don't return true yet
+        } else {
+          console.log(`Task ${taskId} has status: ${response.data.status}, progress: ${response.data.progress}%`);
         }
       }
-      return false;
+      return { isComplete: false };
     } catch (error) {
-      console.error("Status check error:", error);
-      return false;
+      console.error(`Status check error for task ${taskId}:`, error);
+      
+      // Increment error counter
+      setStatusPollingErrors(prev => {
+        const newCount = prev + 1;
+        // Only set connection status to false after multiple consecutive errors
+        if (newCount >= MAX_CONSECUTIVE_ERRORS) {
+          setIsConnectedToBackend(false);
+        }
+        return newCount;
+      });
+      
+      // Don't return true here to allow polling to continue
+      return { isComplete: false };
     }
   };
 
@@ -213,45 +264,183 @@ const Dashboard = () => {
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  // Modify startProcessing function to connect to backend
-  const startProcessing = async () => {
-    if (!uploadedFile || !(uploadedFile as any).video_id) {
+  // Add function to show notifications
+  const showNotification = ({ title, message, type = "default" }: { title: string, message: string, type: "success" | "error" | "default" }) => {
       toast({
-        title: "No file selected",
-        description: "Please upload a file first.",
-        variant: "destructive",
+      title,
+      description: message,
+      variant: type === "error" ? "destructive" : "default",
       });
-      return;
-    }
+  };
 
-    setIsProcessing(true);
-    setProcessingProgress(0);
-    
+  // Start processing for both regular and S3 uploads
+  const startProcessing = async (videoId: string, s3Key?: string) => {
     try {
-      // Start processing on backend
-      const response = await axios.post(`${API_BASE_URL}/process-video/${(uploadedFile as any).video_id}`);
+      setProcessingVideo(videoId);
+      setBackgroundProcessing(true);
       
-      if (response.data && response.data.task_id) {
-        setTaskId(response.data.task_id);
-        
-        // Poll for status updates
-        const statusInterval = setInterval(async () => {
-          const isComplete = await checkTaskStatus(response.data.task_id);
-          if (isComplete) {
-            clearInterval(statusInterval);
-          }
-        }, 2000);
-      }
-    } catch (error) {
-      console.error("Processing error:", error);
-      setIsProcessing(false);
-      toast({
-        title: "Processing failed",
-        description: "There was an error processing your file. Please try again.",
-        variant: "destructive",
+      // Different endpoint for S3-uploaded files
+      const endpoint = s3Key 
+        ? `${API_BASE_URL}/process-s3-video/${videoId}?s3_key=${s3Key}` 
+        : `${API_BASE_URL}/process-video/${videoId}`;
+      
+      // const response = await fetch(endpoint, {
+      //   method: 'POST',
+      // });
+
+      const response = await axios.post(endpoint, {
+        timeout: 600 * 1000 // Set a reasonable timeout
       });
-      setIsConnectedToBackend(false);
+      
+      if (!response.data) {
+        throw new Error(`Processing failed with status ${response.data.status}`);
+      }
+      
+      // const data = await response.data.json();
+      // const data = response.data;
+      
+      // Update upload status and store task ID
+      setUploads(uploads.map(upload => 
+        upload.id === videoId 
+          ? { ...upload, status: 'processing', taskId: response.data.task_id } 
+          : upload
+      ));
+      
+      // Show success notification
+      showNotification({
+        title: "Processing Started",
+        message: `Your podcast is now being processed`,
+        type: "success"
+      });
+      
+      // Start polling for status
+      pollTaskStatus(response.data.task_id);
+      
+    } catch (error) {
+      console.error('Error starting processing:', error);
+      showNotification({
+        title: "Processing Failed",
+        message: error instanceof Error ? error.message : "Failed to start processing",
+        type: "error"
+      });
+    } finally {
+      setProcessingVideo(null);
     }
+  };
+
+  const pollTaskStatus = async (id: string) => {
+    console.log("Starting polling for task ID:", id);
+    
+    // Set the task ID in state to ensure useEffect works properly
+    setTaskId(id);
+    
+    // Set initial polling state
+    setIsProcessing(true);
+    setBackgroundProcessing(true);
+    setProcessingProgress(0);
+    setStatusPollingErrors(0);
+    
+    // Show full-screen loading overlay
+    setShowFullScreenLoading(true);
+    
+    // Clear any existing interval
+    if (activePollingInterval) {
+      clearInterval(activePollingInterval);
+    }
+    
+    // Initial polling interval (3 seconds)
+    let pollingInterval = 3000;
+    let consecutiveErrors = 0;
+    let currentTaskId = id;
+    
+    // Store the interval ID so we can clear it later
+    const intervalId = setInterval(async () => {
+      try {
+        console.log(`Polling interval checking status for task: ${currentTaskId}`);
+        
+        // Call the existing checkTaskStatus function
+        const result = await checkTaskStatus(currentTaskId);
+        
+        // If task is complete or failed, stop polling
+        if (result.isComplete) {
+          console.log(`Task ${currentTaskId} is complete, stopping polling`);
+          clearInterval(intervalId);
+          setActivePollingInterval(null);
+          setIsProcessing(false);
+          return;
+        }
+        
+        // If we should switch to polling a different task ID
+        if (result.shouldSwitchTask && result.newTaskId) {
+          console.log(`Switching polling from task ${currentTaskId} to ${result.newTaskId}`);
+          currentTaskId = result.newTaskId;
+        }
+        
+        // Reset consecutive errors on success
+        if (consecutiveErrors > 0) {
+          consecutiveErrors = 0;
+          // Reset to normal polling interval
+          if (pollingInterval !== 3000) {
+            console.log(`Resetting polling interval to 3000ms after successful response`);
+            pollingInterval = 3000;
+            clearInterval(intervalId);
+            const newIntervalId = setInterval(pollFunction, pollingInterval);
+            setActivePollingInterval(newIntervalId);
+          }
+        }
+      } catch (error) {
+        console.error(`Error polling task status for task ${currentTaskId}:`, error);
+        
+        // Count consecutive errors
+        consecutiveErrors++;
+        
+        // Implement exponential backoff after multiple failures
+        if (consecutiveErrors >= 3) {
+          // Increase polling interval (max 15 seconds)
+          const newInterval = Math.min(pollingInterval * 1.5, 15000);
+          if (newInterval !== pollingInterval) {
+            pollingInterval = newInterval;
+            clearInterval(intervalId);
+            const newIntervalId = setInterval(pollFunction, pollingInterval);
+            setActivePollingInterval(newIntervalId);
+            console.log(`Adjusted polling interval to ${pollingInterval}ms due to errors`);
+          }
+        }
+        
+        // Show error notification after multiple consecutive errors
+        if (consecutiveErrors === MAX_CONSECUTIVE_ERRORS) {
+          showNotification({
+            title: "Connection Issues",
+            message: "Having trouble connecting to the server. Will keep trying...",
+            type: "error"
+          });
+        }
+      }
+    }, pollingInterval);
+    
+    // Create a reference to the polling function for interval adjustments
+    const pollFunction = async () => {
+      try {
+        const result = await checkTaskStatus(currentTaskId);
+        if (result.isComplete) {
+          clearInterval(activePollingInterval!);
+          setActivePollingInterval(null);
+          setIsProcessing(false);
+        }
+        // If we should switch to polling a different task ID
+        if (result.shouldSwitchTask && result.newTaskId) {
+          console.log(`Switching polling from task ${currentTaskId} to ${result.newTaskId}`);
+          currentTaskId = result.newTaskId;
+        }
+      } catch (error) {
+        console.error(`Polling error for task ${currentTaskId}:`, error);
+      }
+    };
+    
+    // Save the interval ID to state for cleanup
+    setActivePollingInterval(intervalId);
+    
+    return intervalId;
   };
 
   const exploreMoreTemplates = () => {
@@ -377,9 +566,324 @@ const Dashboard = () => {
     setPreviewOpen(true);
   };
 
+  // Handle YouTube download completion
+  const handleYouTubeDownloadComplete = (videoId: string, taskId: string) => {
+    console.log(`YouTube download complete for video ${videoId} with task ${taskId}`);
+    
+    // Fetch the video details and any clips that were created
+    axios.get(`${API_BASE_URL}/status/${taskId}`)
+      .then(response => {
+        if (response.data) {
+          const status = response.data.status;
+          const videoInfo = response.data.video_info || {};
+          const clips = response.data.clips || [];
+          const processTaskId = response.data.process_task_id;
+          const progress = response.data.progress || 0;
+          
+          console.log(`YouTube status for task ${taskId}:`, {
+            status,
+            processTaskId,
+            videoInfo,
+            clips: clips.length,
+            progress,
+            fullResponse: response.data
+          });
+          
+          // Add the video to the uploads list
+          const newUpload: UploadItem = {
+            id: videoId,
+            filename: videoInfo.title || "YouTube Video",
+            status: status === "completed" ? "processed" : 
+                   (status === "processing_started" || status === "processing" || 
+                    status === "transcribing" || status === "analyzing" || status === "queued") ? "processing" : 
+                   "downloaded",
+            taskId: processTaskId || taskId,
+            uploadDate: new Date().toISOString(),
+          };
+          
+          // Check if this upload already exists
+          const existingUploadIndex = uploads.findIndex(u => u.id === videoId);
+          
+          if (existingUploadIndex >= 0) {
+            // Update existing upload
+            console.log(`Updating existing upload at index ${existingUploadIndex}:`, newUpload);
+            setUploads(prev => {
+              const updatedUploads = [...prev];
+              updatedUploads[existingUploadIndex] = newUpload;
+              return updatedUploads;
+            });
+          } else {
+            // Add new upload
+            console.log(`Adding new upload:`, newUpload);
+            setUploads(prev => [newUpload, ...prev]);
+          }
+          
+          // If processing is complete and there are clips, add them to the clips list
+          if (status === "completed" && clips.length > 0) {
+            console.log(`Adding ${clips.length} clips for video ${videoId}`);
+            const newClips = clips.map(clip => ({
+              id: clip.id,
+              videoId: videoId,
+              title: clip.title || "Clip",
+              description: clip.description || "",
+              startTime: clip.start_time,
+              endTime: clip.end_time,
+              duration: clip.end_time - clip.start_time,
+              url: clip.url,
+              thumbnailUrl: clip.thumbnail_url || "",
+              createdAt: new Date().toISOString()
+            }));
+            
+            setGeneratedClips(prev => [...newClips, ...prev]);
+          }
+          
+          // For YouTube downloads, if status is "downloaded" and auto-processing is expected,
+          // we should immediately show the processing UI and start polling
+          if (status === "downloaded") {
+            console.log(`Download complete for video ${videoId}, showing processing UI and starting polling`);
+            
+            // Update processing status display
+            setProcessingProgress(0);
+            setProcessingStatus("processing_started");
+            setProcessingMessage("Starting processing...");
+            setIsProcessing(true);
+            setBackgroundProcessing(true);
+            setProcessingVideo(videoId);
+            
+            // Show the full screen loading overlay
+            setShowFullScreenLoading(true);
+            
+            // Start polling with the current task ID
+            const taskToUse = processTaskId || taskId;
+            console.log(`Starting polling with task ID: ${taskToUse}`);
+            pollTaskStatus(taskToUse);
+            
+            // Also update the upload status to "processing" to be consistent with UI
+            setUploads(prev => {
+              const updatedUploads = [...prev];
+              const index = updatedUploads.findIndex(u => u.id === videoId);
+              if (index >= 0) {
+                updatedUploads[index] = {
+                  ...updatedUploads[index],
+                  status: "processing"
+                };
+              }
+              return updatedUploads;
+            });
+            
+            return; // Exit early since we've handled the UI update
+          }
+          
+          // If processing has started or is in progress, begin polling for status updates
+          if ((status === "processing_started" || status === "queued" || 
+               status === "processing" || status === "transcribing" || 
+               status === "analyzing") && (processTaskId || taskId)) {
+            const taskToUse = processTaskId || taskId;
+            console.log(`Processing started/in progress for video ${videoId}, polling for updates with task ID: ${taskToUse}`);
+            
+            // Update processing status display
+            setProcessingProgress(progress);
+            setProcessingStatus(status);
+            setProcessingMessage(response.data.message || null);
+            setIsProcessing(true);
+            setBackgroundProcessing(true);
+            
+            // Start or continue polling
+            pollTaskStatus(taskToUse);
+            setProcessingVideo(videoId);
+            
+            // Show the full screen loading overlay if not already shown
+            setShowFullScreenLoading(true);
+          }
+          
+          // Select the video
+          setTaskId(videoId);
+          
+          // Show a success message
+          toast({
+            title: "YouTube Video Ready",
+            description: status === "completed" 
+              ? `Video "${videoInfo.title}" has been processed with ${clips.length} clips` 
+              : `Video "${videoInfo.title}" has been downloaded`,
+            variant: "default"
+          });
+        }
+      })
+      .catch(error => {
+        console.error(`Error fetching YouTube download details for task ${taskId}:`, error);
+        toast({
+          title: "Error",
+          description: "Failed to get video details",
+          variant: "destructive"
+        });
+      });
+  };
+
+  // Add handler for starting YouTube processing
+  const handleStartYouTubeProcessing = (videoId: string, taskId: string) => {
+    console.log("Starting YouTube processing:", videoId, taskId);
+    
+    // Start polling for processing status
+    pollTaskStatus(taskId);
+    setProcessingVideo(videoId);
+  };
+
+  const uploadSection = (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Upload Podcast</h2>
+      </div>
+      
+      {/* Upload Method Tabs */}
+      <Tabs defaultValue={uploadMethod} onValueChange={(value) => setUploadMethod(value as 's3' | 'youtube')}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="s3">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload File
+          </TabsTrigger>
+          <TabsTrigger value="youtube">
+            <Youtube className="w-4 h-4 mr-2" />
+            YouTube URL
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="s3">
+          <S3FileUploader 
+            onUploadComplete={(videoId, s3Key, filename) => {
+              // Add the uploaded file to the uploads list
+              setUploads(prev => [
+                {
+                  id: videoId,
+                  filename,
+                  uploadDate: new Date().toISOString(),
+                  status: 'uploaded',
+                  s3Key
+                },
+                ...prev
+              ]);
+              
+              // Show success notification
+              showNotification({
+                title: "Upload Complete",
+                message: `${filename} has been uploaded successfully to S3`,
+                type: "success"
+              });
+            }}
+            onStartProcessing={(videoId, s3Key) => {
+              // Call the startProcessing function to initiate processing
+              startProcessing(videoId, s3Key);
+            }}
+            apiBaseUrl={API_BASE_URL}
+          />
+        </TabsContent>
+        
+        <TabsContent value="youtube">
+          <YouTubeDownloader
+            onDownloadComplete={handleYouTubeDownloadComplete}
+            onStartProcessing={handleStartYouTubeProcessing}
+            apiBaseUrl={API_BASE_URL}
+          />
+        </TabsContent>
+      </Tabs>
+      
+      <div className="text-sm text-gray-500">
+        <p>
+          <InfoIcon className="inline h-4 w-4 mr-1" />
+          {uploadMethod === 's3' 
+            ? "Simply click the upload area or drag-and-drop a file to upload (up to 5GB). Processing starts automatically after upload."
+            : "Enter a YouTube URL to download and process the video directly. No need to download locally first."
+          }
+        </p>
+      </div>
+      
+      {/* Upload List and Status */}
+      {uploads.length > 0 && (
+        <div className="mt-6 border rounded-md overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  File
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {uploads.map((upload) => (
+                <tr key={upload.id}>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{upload.filename}</div>
+                    <div className="text-xs text-gray-500">{upload.id}</div>
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      {new Date(upload.uploadDate).toLocaleString()}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      upload.status === 'uploaded' ? 'bg-green-100 text-green-800' :
+                      upload.status === 'downloaded' ? 'bg-green-100 text-green-800' :
+                      upload.status === 'downloading' ? 'bg-blue-100 text-blue-800' :
+                      upload.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                      upload.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {upload.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap text-sm">
+                    {(upload.status === 'uploaded' || upload.status === 'downloaded') && (
+                      <Button 
+                        size="sm" 
+                        onClick={() => upload.s3Key 
+                          ? startProcessing(upload.id, upload.s3Key)
+                          : handleStartYouTubeProcessing(upload.id, upload.taskId || '')
+                        } 
+                        disabled={processingVideo === upload.id}
+                      >
+                        {processingVideo === upload.id ? 'Starting...' : 'Process'}
+                      </Button>
+                    )}
+                    {upload.status === 'processing' && (
+                      <div className="text-xs text-blue-600">
+                        {upload.taskId && `Task ID: ${upload.taskId}`}
+                      </div>
+                    )}
+                    {upload.status === 'completed' && (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => {
+                          // Navigate to generated clips
+                          const clipsSectionEl = document.getElementById('clips-section');
+                          if (clipsSectionEl) clipsSectionEl.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                      >
+                        View Clips
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col">
-      {!isConnectedToBackend && (
+      {!isConnectedToBackend && statusPollingErrors >= MAX_CONSECUTIVE_ERRORS && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded fixed top-20 right-4 z-50 shadow-md">
           <div className="flex">
             <div className="py-1">
@@ -388,8 +892,20 @@ const Dashboard = () => {
               </svg>
             </div>
             <div>
-              <p className="font-bold">Backend Connection Error</p>
-              <p className="text-sm">Unable to connect to the backend service. Please check if the server is running.</p>
+              <p className="font-bold">Backend Connection Issue</p>
+              <p className="text-sm">Having trouble connecting to the server. Your task is still processing in the background. We'll keep trying to connect.</p>
+              <button 
+                className="mt-2 text-sm underline"
+                onClick={() => {
+                  setStatusPollingErrors(0);
+                  setIsConnectedToBackend(true);
+                  if (taskId) {
+                    pollTaskStatus(taskId);
+                  }
+                }}
+              >
+                Retry now
+              </button>
             </div>
           </div>
         </div>
@@ -399,8 +915,41 @@ const Dashboard = () => {
         <h1 className="text-3xl font-bold mb-2 text-brand-purple">Creator Dashboard</h1>
         <p className="text-muted-foreground mb-8">Upload your podcast and create viral social media clips</p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <Card className="h-full border-brand-purple/20 shadow-md hover:shadow-lg transition-all">
+        {/* Background Processing Indicator */}
+        {backgroundProcessing && !showFullScreenLoading && (
+          <div className="mb-6 bg-brand-purple/10 border border-brand-purple/20 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="mr-3 h-8 w-8 rounded-full bg-brand-purple/20 flex items-center justify-center">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-purple border-t-transparent"></div>
+                </div>
+                <div>
+                  <h3 className="font-medium text-brand-purple">Processing in Background</h3>
+                  <p className="text-sm text-muted-foreground">{processingMessage || "Creating clips from your podcast..."}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-sm">
+                  <span className="font-medium">{Math.round(processingProgress)}%</span>
+                  <span className="text-muted-foreground ml-1">complete</span>
+                </div>
+                <Button 
+                  size="sm"
+                  onClick={() => setShowFullScreenLoading(true)}
+                >
+                  Show Details
+                </Button>
+              </div>
+            </div>
+            <div className="mt-2">
+              <Progress value={processingProgress} className="h-2" />
+            </div>
+          </div>
+        )}
+        
+        {/* Dashboard Cards */}
+        <div className="grid grid-cols-1 gap-6">
+          <Card className="border-brand-purple/20 shadow-md hover:shadow-lg transition-all">
             <CardHeader className="bg-gradient-to-r from-brand-purple/10 to-transparent rounded-t-lg">
               <CardTitle className="flex items-center gap-2">
                 <Upload className="h-5 w-5 text-brand-purple" />
@@ -411,137 +960,42 @@ const Dashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div 
-                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${dragActive ? 'border-brand-purple bg-brand-purple/5' : 'border-gray-300 hover:border-brand-purple/50'}`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                onClick={triggerFileInput}
-              >
-                <div className="flex flex-col items-center justify-center py-4">
-                  <div className="h-16 w-16 rounded-full bg-brand-purple/10 flex items-center justify-center mb-4">
-                    <FileUp className="h-8 w-8 text-brand-purple" />
-                  </div>
-                  <p className="mb-2 text-sm font-medium">
-                    <span className="text-brand-purple font-semibold">Click to upload</span> or drag and drop
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    MP3, MP4, WAV (max. 5GB)
-                  </p>
-                  <input
-                    ref={fileInputRef}
-                    id="file-upload"
-                    type="file"
-                    className="hidden"
-                    onChange={handleChange}
-                    accept=".mp3,.mp4,.wav"
-                  />
-                </div>
-              </div>
-              
-              {uploadedFile && (
-                <div className="mt-4 p-4 bg-brand-purple/5 rounded-md border border-brand-purple/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      {uploadedFile.type.includes('audio') ? (
-                        <Headphones className="h-8 w-8 text-brand-purple" />
-                      ) : (
-                        <Video className="h-8 w-8 text-brand-purple" />
-                      )}
-                      <div>
-                        <p className="text-sm font-medium truncate max-w-[200px]">{uploadedFile.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB
-                        </p>
-                      </div>
-                    </div>
-                    <div className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                      Ready
-                    </div>
-                  </div>
-                </div>
-              )}
+              {uploadSection}
             </CardContent>
             <CardFooter>
               <Button 
                 className="w-full bg-brand-purple hover:bg-brand-purple/90 transition-all"
-                disabled={isUploading}
-                onClick={triggerFileInput}
+                disabled={isProcessing}
+                onClick={() => {
+                  if (uploadMethod === 's3') {
+                    // Find and trigger the S3FileUploader's file input
+                    const fileInput = document.querySelector<HTMLElement>('.S3FileUploader input[type="file"]');
+                    if (fileInput) fileInput.click();
+                  } else {
+                    // Focus the YouTube URL input
+                    const urlInput = document.getElementById('youtube-url');
+                    if (urlInput) urlInput.focus();
+                  }
+                }}
               >
-                {isUploading ? (
-                  <div className="flex items-center">
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                    Uploading...
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload Podcast
-                  </div>
-                )}
+                <div className="flex items-center">
+                  {uploadMethod === 's3' ? (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Select Podcast File
+                    </>
+                  ) : (
+                    <>
+                      <Youtube className="mr-2 h-4 w-4" />
+                      Enter YouTube URL
+                    </>
+                  )}
+                </div>
               </Button>
             </CardFooter>
           </Card>
           
-          <Card className="h-full border-brand-purple/20 shadow-md hover:shadow-lg transition-all">
-            <CardHeader className="bg-gradient-to-r from-brand-purple/10 to-transparent rounded-t-lg">
-              <CardTitle className="flex items-center gap-2">
-                <Scissors className="h-5 w-5 text-brand-purple" />
-                Create Clips
-              </CardTitle>
-              <CardDescription>
-                Process your podcast to create social media ready clips
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="h-[240px] flex items-center justify-center">
-              {uploadedFile ? (
-                <div className="text-center">
-                  <div className="mb-6">
-                    <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-brand-purple/10">
-                      <Play className="h-10 w-10 text-brand-purple" />
-                    </div>
-                  </div>
-                  <h3 className="mb-2 text-lg font-medium">Ready to Process</h3>
-                  <p className="text-sm text-muted-foreground max-w-xs mx-auto mb-4">
-                    Your file is ready to be processed. Our AI will identify the best moments and create engaging clips.
-                  </p>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <div className="mb-6">
-                    <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-gray-100">
-                      <Mic className="h-10 w-10 text-muted-foreground" />
-                    </div>
-                  </div>
-                  <h3 className="mb-2 text-lg font-medium text-muted-foreground">No File Uploaded</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Upload a podcast to get started with clip creation
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            <CardFooter>
-              <Button 
-                className="w-full"
-                variant={uploadedFile ? "default" : "outline"}
-                disabled={!uploadedFile || isProcessing}
-                onClick={startProcessing}
-              >
-                {isProcessing ? (
-                  <div className="flex items-center">
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                    Processing... {processingProgress > 0 ? `${Math.round(processingProgress)}%` : ''}
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Start Creating Clips
-                  </div>
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
+          {/* Create Clips card removed */}
         </div>
         
         {/* Generated Clips Section */}
@@ -803,6 +1257,53 @@ const Dashboard = () => {
         )}
       </div>
       <Footer />
+      {/* Full-screen loading overlay */}
+      {showFullScreenLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex flex-col items-center justify-center">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 mb-4 relative">
+                <div className="absolute inset-0 border-4 border-t-brand-purple border-opacity-20 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-brand-purple text-lg font-bold">{Math.round(processingProgress)}%</span>
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-semibold mb-2">Processing Your Podcast</h3>
+              <p className="text-gray-600 mb-4 text-center">
+                {processingMessage || "We're creating engaging clips from your podcast. This may take a few minutes."}
+              </p>
+              
+              <div className="w-full mb-4">
+                <Progress value={processingProgress} className="h-2" />
+              </div>
+              
+              <div className="flex items-center justify-between w-full text-sm text-gray-500">
+                <span>{processingStatus || "Processing"}</span>
+                <span>{Math.round(processingProgress)}% Complete</span>
+              </div>
+              
+              <Button 
+                variant="outline" 
+                className="mt-6"
+                onClick={() => {
+                  // Hide the overlay but maintain processing state
+                  setShowFullScreenLoading(false);
+                  // Ensure background processing state is set
+                  setBackgroundProcessing(true);
+                  // Inform the user that processing continues
+                  toast({
+                    title: "Processing in Background",
+                    description: "Your podcast is still being processed. You can check the status at the top of the dashboard.",
+                  });
+                }}
+              >
+                Continue in Background
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Preview Modal */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
